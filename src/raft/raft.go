@@ -19,7 +19,13 @@ package raft
 
 import "sync"
 import "labrpc"
-
+import "time"
+import(
+	"sync"
+	"time"
+	"labrpc"
+	"math/rand"
+)
 // import "bytes"
 // import "labgob"
 
@@ -42,6 +48,11 @@ type ApplyMsg struct {
 	CommandIndex int
 }
 
+type Log struct{
+	command interface{}
+	term int
+	index int
+}
 //
 // A Go object implementing a single Raft peer.
 //
@@ -54,7 +65,15 @@ type Raft struct {
 	// Your data here (2A, 2B, 2C).
 	// Look at the paper's Figure 2 for a description of what
 	// state a Raft server must maintain.
+	currentTerm int
+	votedFor int
 
+	commitIndex int
+	lastApplied int
+	nextIndex []int
+	matchIndex []int
+	logs []Log
+	isLeader bool
 }
 
 // return currentTerm and whether this server
@@ -64,6 +83,7 @@ func (rf *Raft) GetState() (int, bool) {
 	var term int
 	var isleader bool
 	// Your code here (2A).
+	term = currentTerm
 	return term, isleader
 }
 
@@ -116,6 +136,10 @@ func (rf *Raft) readPersist(data []byte) {
 //
 type RequestVoteArgs struct {
 	// Your data here (2A, 2B).
+	Term int
+	CandidateId int
+	LastLogIndex int
+	LastLogTerm int
 }
 
 //
@@ -124,6 +148,8 @@ type RequestVoteArgs struct {
 //
 type RequestVoteReply struct {
 	// Your data here (2A).
+	Term int
+	VoteGranted bool
 }
 
 //
@@ -131,6 +157,7 @@ type RequestVoteReply struct {
 //
 func (rf *Raft) RequestVote(args *RequestVoteArgs, reply *RequestVoteReply) {
 	// Your code here (2A, 2B).
+
 }
 
 //
@@ -166,7 +193,6 @@ func (rf *Raft) sendRequestVote(server int, args *RequestVoteArgs, reply *Reques
 	ok := rf.peers[server].Call("Raft.RequestVote", args, reply)
 	return ok
 }
-
 
 //
 // the service using Raft (e.g. a k/v server) wants to start
@@ -214,18 +240,53 @@ func (rf *Raft) Kill() {
 // Make() must return quickly, so it should start goroutines
 // for any long-running work.
 //
+
+func GenerateRangeNum(min, max int) int{
+	rand.Seed(time.Nwo().unix())
+	randNum := rand.Intn(max - min) + min
+	return randNum
+}
+
+func (rf *Raft)HeartBeats(){
+	for{
+		randNum := GenerateRangeNum(200, 400)
+		time.Sleep(randNum * time.Millisecond)
+		req := RequestVoteArgs{
+			rf.currentTerm,
+			rf.me,
+			rf.logs[len(logs)-1].term,
+			rf.logs[len(logs)-1].index
+		}
+		var voteNum int
+		var reply RequestVoteReply
+		for server := range rf.peers{
+			if ok := sendRequestVote(server, &req, &reply); ok{
+				voteNum++
+			}
+		}
+
+		peerNum := len(rf.peers)
+		if voteNum >= (peerNum-1)/2{
+			rf.isLeader = true
+		}
+	}
+}
 func Make(peers []*labrpc.ClientEnd, me int,
 	persister *Persister, applyCh chan ApplyMsg) *Raft {
 	rf := &Raft{}
 	rf.peers = peers
 	rf.persister = persister
 	rf.me = me
-
+	
+	rf.currentTerm = 0
+	rf.votedFor = -1
+	rf.logs = make([]Log)
+	rf.commit
 	// Your initialization code here (2A, 2B, 2C).
 
 	// initialize from state persisted before a crash
 	rf.readPersist(persister.ReadRaftState())
-
-
+	
+	go rf.HeartBeats()
 	return rf
 }
